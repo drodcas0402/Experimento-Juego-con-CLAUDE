@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Anime Showdown (prototipo)</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--tx:#1d1d1f;--mu:#6b6b70;--bd:#d9d7d2;--ac:#c2410c;--up:#15803d;--dn:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17171a;--card:#232328;--tx:#f0efec;--mu:#9a9aa2;--bd:#3a3a42;--ac:#fb923c;--up:#4ade80;--dn:#f87171}}
+:root[data-theme="dark"]{--bg:#17171a;--card:#232328;--tx:#f0efec;--mu:#9a9aa2;--bd:#3a3a42;--ac:#fb923c;--up:#4ade80;--dn:#f87171}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px system-ui,sans-serif}
+main{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0 0 12px}
+button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 14px;cursor:pointer;text-align:left}
+button:hover:not(:disabled){border-color:var(--ac)}button:disabled{opacity:.4;cursor:default}
+.team{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.pan{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px}
+.pan.ko{opacity:.45}.pan.cur{border-color:var(--ac);outline:2px solid var(--ac)}
+.row{display:flex;align-items:center;gap:8px}
+.av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;flex:none}
+.bar{height:10px;background:var(--bd);border-radius:5px;overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;background:#16a34a;transition:width .3s}
+.st{display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;margin-top:8px;font-size:13px}
+.up{color:var(--up);font-weight:600}.dn{color:var(--dn);font-weight:600}
+small{color:var(--mu)}
+.ctl{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px}
+.mv{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:8px}
+#log{height:200px;overflow:auto;font-size:14px;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px;margin-top:10px}
+@media (max-width:520px){.team{grid-template-columns:1fr}}
+</style></head><body><main>
+<h1>Anime Showdown <small>· prototipo 2 contra 2</small></h1>
+<div id="app"></div>
+<div id="log"></div>
+</main>
+<script>
+// ===== DATOS DEL JUEGO =====
+// Tabla de tipos: 'fuerte' = x2, 'debil' = x0.5 (aún no conectada al combate)
+const TIPOS=['Tanque','Asesino','Apoyo','Mago','Tirador'];
+const TABLA={
+ Tanque:{fuerte:['Asesino','Tirador'],debil:['Apoyo','Mago']},
+ Asesino:{fuerte:['Apoyo','Tirador'],debil:['Tanque','Mago']},
+ Apoyo:{fuerte:['Tanque','Mago'],debil:['Asesino','Tirador']},
+ Mago:{fuerte:['Tanque','Asesino'],debil:['Apoyo','Tirador']},
+ Tirador:{fuerte:['Apoyo','Mago'],debil:['Tanque','Asesino']}
+};
+const efic=(atq,def)=>TABLA[atq].fuerte.includes(def)?2:TABLA[atq].debil.includes(def)?.5:1;
+const NM={ataque:'Ataque',defensa:'Defensa',atkEsp:'Atk Esp',defEsp:'Def Esp',velocidad:'Velocidad'};
+const KEYS=Object.keys(NM);
+// t (objetivo): 'enemigo' = eliges rival, 'aliado' = eliges aliado, 'yo' = sí mismo
+const ICHIGO={n:'Ichigo',c:'#ea580c',vida:100,ataque:80,defensa:60,atkEsp:75,defEsp:55,velocidad:85,mv:[
+ {n:'Tajo',cat:'físico',p:60,a:100,t:'enemigo'},
+ {n:'Getsuga Tenshō',cat:'especial',p:90,a:90,t:'enemigo'},
+ {n:'Bankai',cat:'estado',sube:{ataque:2,atkEsp:2,velocidad:2},t:'yo'}]};
+const ORIHIME={n:'Orihime',c:'#db2777',vida:90,ataque:40,defensa:50,atkEsp:70,defEsp:70,velocidad:75,mv:[
+ {n:'Tsubaki',cat:'especial',p:60,a:95,t:'enemigo'},
+ {n:'Sōten Kisshun',cat:'cura',cura:.4,t:'aliado'}]};
+const MANIQUI=(l,v)=>({n:'Maniquí '+l,i:l,c:'#78716c',vida:200,ataque:45,defensa:50,atkEsp:0,defEsp:50,velocidad:v,mv:[{n:'Golpe',cat:'físico',p:40,a:100,t:'enemigo'}]});
+// ===== NIVELES DE ESTADÍSTICAS (-6 a +6, como Pokémon) =====
+const mult=n=>n>=0?(2+n)/2:2/(2-n);
+const val=(u,k)=>Math.round(u[k]*mult(u.st[k]));
+const mk=(b,side)=>({...b,side,hp:b.vida,st:{ataque:0,defensa:0,atkEsp:0,defEsp:0,velocidad:0}});
+// ===== ESTADO =====
+let A,F,turn,sel,over;
+const $=s=>document.querySelector(s),lg=$('#log');
+const L=t=>{lg.innerHTML+='<div>'+t+'</div>';lg.scrollTop=1e9};
+const alive=x=>x.filter(u=>u.hp>0),rnd=a=>a[Math.floor(Math.random()*a.length)];
+function reset(){A=[mk(ICHIGO,'A'),mk(ORIHIME,'A')];F=[mk(MANIQUI('A',40),'F'),mk(MANIQUI('B',60),'F')];turn=1;over=false;sel={acts:[],move:null};lg.innerHTML='';L('<b>— Turno 1 —</b>');draw()}
+// ===== ACCIONES =====
+function exec(a){
+ const u=a.u,m=a.m;if(u.hp<=0||over)return;
+ const foes=alive(u.side==='A'?F:A);let t=a.t;
+ if(m.t==='yo')t=u;
+ else if(m.t==='enemigo'&&(!t||t.hp<=0)){if(!foes.length)return;t=rnd(foes)}
+ if(m.cat==='estado'){
+  L(`<b>${u.n} usa ${m.n}</b>`);
+  for(const k in m.sube){const o=t.st[k],n=Math.min(6,o+m.sube[k]);t.st[k]=n;L(n===o?`· ${NM[k]} no puede subir más`:`· ${NM[k]} sube a +${n} (×${mult(n).toFixed(2)})`)}
+ }else if(m.cat==='cura'){
+  if(t.hp<=0){L(`${u.n} usa ${m.n}... ${t.n} ya no puede ser curado.`);return}
+  const h=Math.min(t.vida-t.hp,Math.round(t.vida*m.cura));t.hp+=h;
+  L(`${u.n} usa ${m.n} en ${t.n}: <b>+${h}</b>`);
+ }else if(Math.random()*100>m.a){L(`${u.n} usa ${m.n}... ¡falla!`)}
+ else{
+  const esp=m.cat==='especial',ka=esp?'atkEsp':'ataque',kd=esp?'defEsp':'defensa',x=val(u,ka),d=val(t,kd);
+  const dmg=Math.round(((x/d)*m.p*.45+2)*(.85+Math.random()*.15));
+  t.hp=Math.max(0,t.hp-dmg);
+  L(`${u.n} usa ${m.n} contra ${t.n}: <b>-${dmg}</b> <small>(${NM[ka]} ${x} vs ${NM[kd]} ${d})</small>`);
+  if(t.hp<=0)L(`<b>${t.n} cae.</b>`);
+ }
+}
+function round(){
+ const acts=[...sel.acts];
+ alive(F).forEach(u=>acts.push({u,m:u.mv[0],t:rnd(alive(A))}));
+ acts.map(a=>({a,s:val(a.u,'velocidad')+Math.random()})).sort((x,y)=>y.s-x.s).forEach(o=>exec(o.a));
+ if(!alive(F).length){over=true;L('<b>¡Has ganado!</b>')}
+ else if(!alive(A).length){over=true;L('<b>Has perdido.</b>')}
+ else{turn++;L(`<b>— Turno ${turn} —</b>`)}
+ sel={acts:[],move:null};draw();
+}
+// ===== INTERFAZ =====
+const actor=()=>alive(A)[sel.acts.length];
+function pickMove(i){const u=actor(),m=u.mv[i];if(m.t==='yo')add(u,m,u);else{sel.move=m;draw()}}
+function pickTarget(side,i){add(actor(),sel.move,(side==='F'?F:A)[i])}
+function add(u,m,t){sel.acts.push({u,m,t});sel.move=null;sel.acts.length===alive(A).length?round():draw()}
+function back(){if(sel.move)sel.move=null;else sel.acts.pop();draw()}
+const chip=(u,k)=>{const s=u.st[k];return `<span>${NM[k]}: <b class="${s>0?'up':s<0?'dn':''}">${val(u,k)}</b>${s?` <small>(${s>0?'+':''}${s})</small>`:''}</span>`};
+const pan=(u,cur)=>`<div class="pan ${u.hp<=0?'ko':''} ${cur?'cur':''}"><div class="row"><div class="av" style="background:${u.c}">${u.i||u.n[0]}</div><div style="flex:1"><b>${u.n}</b> <small>${u.hp<=0?'KO':'Vida '+u.hp+'/'+u.vida}</small><div class="bar"><i style="width:${u.hp/u.vida*100}%"></i></div></div></div><div class="st">${KEYS.map(k=>chip(u,k)).join('')}</div></div>`;
+function ctl(){
+ if(over)return `<button onclick="reset()">Combatir de nuevo</button>`;
+ const u=actor(),back_=sel.acts.length||sel.move?`<button onclick="back()">← Atrás</button>`:'';
+ if(!sel.move)return `<b>Turno ${turn}: ¿qué hace ${u.n}?</b><div class="mv">${u.mv.map((m,i)=>`<button onclick="pickMove(${i})"><b>${m.n}</b><br><small>${m.cat}${m.p?' · pot. '+m.p+' · prec. '+m.a:m.cura?' · cura '+m.cura*100+'%':' · sube estadísticas'}</small></button>`).join('')}${back_}</div>`;
+ const side=sel.move.t==='enemigo'?'F':'A',list=side==='F'?F:A;
+ return `<b>${u.n} usa ${sel.move.n}: elige objetivo</b><div class="mv">${list.map((t,i)=>t.hp>0?`<button onclick="pickTarget('${side}',${i})"><b>${t.n}</b><br><small>Vida ${t.hp}/${t.vida}</small></button>`:'').join('')}${back_}</div>`;
+}
+function draw(){
+ const cur=over?null:actor();
+ $('#app').innerHTML=`<small>Rivales</small><div class="team">${F.map(u=>pan(u)).join('')}</div><small>Tu equipo</small><div class="team">${A.map(u=>pan(u,u===cur)).join('')}</div><div class="ctl">${ctl()}</div>`;
+}
+reset();
+</script></body></html>
