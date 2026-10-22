@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Anime Showdown</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--tx:#1d1d1f;--mu:#6b6b70;--bd:#d9d7d2;--ac:#c2410c;--up:#15803d;--dn:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17171a;--card:#232328;--tx:#f0efec;--mu:#9a9aa2;--bd:#3a3a42;--ac:#fb923c;--up:#4ade80;--dn:#f87171}}
+:root[data-theme="dark"]{--bg:#17171a;--card:#232328;--tx:#f0efec;--mu:#9a9aa2;--bd:#3a3a42;--ac:#fb923c;--up:#4ade80;--dn:#f87171}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px system-ui,sans-serif}
+main{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0 0 12px}
+button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 14px;cursor:pointer;text-align:left}
+button:hover:not(:disabled){border-color:var(--ac)}button:disabled{opacity:.4;cursor:default}
+.team{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.pan{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px}
+.pan.ko{opacity:.45}.pan.cur{border-color:var(--ac);outline:2px solid var(--ac)}
+.row{display:flex;align-items:center;gap:8px}
+.av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;flex:none}
+.bar{height:10px;background:var(--bd);border-radius:5px;overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;background:#16a34a;transition:width .3s}
+.st{display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;margin-top:8px;font-size:13px}
+.up{color:var(--up);font-weight:600}.dn{color:var(--dn);font-weight:600}
+small{color:var(--mu)}
+.ctl{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px}
+.mv{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:8px}
+#log{height:200px;overflow:auto;font-size:14px;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px;margin-top:10px}
+@media (max-width:520px){.team{grid-template-columns:1fr}}
+</style></head><body><main>
+<h1>Anime Showdown <small>· 2 contra 2 · con banca</small></h1>
+<div id="app"></div>
+<div id="log"></div>
+</main>
+<script>
+// ===== DATOS DEL JUEGO =====
+// Tabla de tipos: 'fuerte' = x2, 'debil' = x0.5 (aún no conectada al combate)
+const TIPOS=['Tanque','Asesino','Apoyo','Mago','Tirador'];
+const TABLA={
+ Tanque:{fuerte:['Asesino','Tirador'],debil:['Apoyo','Mago']},
+ Asesino:{fuerte:['Apoyo','Tirador'],debil:['Tanque','Mago']},
+ Apoyo:{fuerte:['Tanque','Mago'],debil:['Asesino','Tirador']},
+ Mago:{fuerte:['Tanque','Asesino'],debil:['Apoyo','Tirador']},
+ Tirador:{fuerte:['Apoyo','Mago'],debil:['Tanque','Asesino']}
+};
+const efic=(atq,def)=>TABLA[atq].fuerte.includes(def)?2:TABLA[atq].debil.includes(def)?.5:1;
+const NM={ataque:'Ataque',defensa:'Defensa',atkEsp:'Atk Esp',defEsp:'Def Esp',velocidad:'Velocidad'};
+const KEYS=Object.keys(NM);
+// t (objetivo): 'enemigo' = eliges rival, 'aliado' = eliges aliado, 'yo' = sí mismo
+const ICHIGO={n:'Ichigo',ab:{id:'hollow',n:'Instinto Hollow',d:'Al bajar del 33% de vida, Ataque, Atk Esp y Velocidad ×2 durante un turno; después queda agotado para siempre (Ataque y Atk Esp a la mitad). Una vez por combate.'},c:'#ea580c',vida:100,ataque:80,defensa:60,atkEsp:75,defEsp:55,velocidad:85,mv:[
+ {n:'Tajo',cat:'físico',p:60,a:100,t:'enemigo'},
+ {n:'Getsuga Tenshō',cat:'especial',p:90,a:90,t:'enemigo'},
+ {n:'Bankai',cat:'estado',sube:{ataque:2,atkEsp:2,velocidad:2},t:'yo'},
+ {n:'Mugetsu',cat:'especial',p:150,a:90,cd:2,retro:{ataque:-2,atkEsp:-2},t:'enemigo'}]};
+const ORIHIME={n:'Orihime',ab:{id:'amable',n:'Corazón Amable',d:'Sus curas, su escudo y su regeneración curan un 10% más.'},c:'#db2777',vida:90,ataque:40,defensa:50,atkEsp:70,defEsp:70,velocidad:75,mv:[
+ {n:'Tsubaki',cat:'especial',p:60,a:95,t:'enemigo'},
+ {n:'Sōten Kisshun',cat:'cura',cura:.4,t:'aliado'},
+ {n:'Santen Kesshun',cat:'escudo',cura:.15,cd:1,t:'aliado'},
+ {n:'Shun Shun Rikka',cat:'regen',cura:.12,turnos:3,t:'aliado'}]};
+const CHAD={n:'Chad',ab:{id:'acero',n:'Cuerpo de Acero',d:'Recibe un 10% menos de daño.'},c:'#7c3aed',vida:120,ataque:85,defensa:80,atkEsp:60,defEsp:70,velocidad:45,mv:[
+ {n:'Brazo del Gigante',cat:'físico',p:80,a:90,t:'enemigo'},
+ {n:'Brazo del Diablo',cat:'especial',p:95,a:85,t:'enemigo'},
+ {n:'Guardia de Hierro',cat:'estado',sube:{defensa:2,defEsp:1},t:'yo'},
+ {n:'Puñetazo Directo',cat:'físico',p:55,a:100,t:'enemigo'}]};
+const RUKIA={n:'Rukia',ab:{id:'hielo',n:'Sode no Shirayuki',d:'Sus ataques tienen un 2,5% de congelar al rival. Un congelado no actúa hasta que cada turno tenga un 10% de descongelarse.'},c:'#0ea5e9',vida:85,ataque:60,defensa:55,atkEsp:85,defEsp:65,velocidad:80,mv:[
+ {n:'Hadō 4: Byakurai',cat:'especial',p:65,a:100,t:'enemigo'},
+ {n:'Hadō 33: Sōkatsui',cat:'especial',p:90,a:90,t:'enemigo'},
+ {n:'Hakuren',cat:'especial',p:115,a:85,cd:1,t:'enemigo'},
+ {n:'Bakudō 61: Rikujōkōrō',cat:'estado',sube:{velocidad:-2,defensa:-1},t:'enemigo'}]};
+const DAVID={n:'David',c:'#eab308',ab:{id:'reflejos',n:'Reflejos Cibernéticos',d:'Esquiva un 5% de los ataques, y un 1% más por cada 15% de Velocidad extra sobre su base.'},vida:95,ataque:85,defensa:55,atkEsp:30,defEsp:45,velocidad:90,mv:[
+ {n:'Tiro de Pistola',cat:'físico',p:30,a:100,golpes:5,cadena:[1,.5,.5,.5],t:'enemigo'},
+ {n:'Gorilla Arms',cat:'físico',p:90,a:90,t:'enemigo'},
+ {n:'Sandevistan',cat:'estado',sube:{velocidad:3,ataque:1},t:'yo'},
+ {n:'Descarga EMP',cat:'físico',p:45,a:100,para:.5,t:'enemigo'}]};
+// series para la pantalla de selección (el orden de ROSTER es el de las series)
+const REBECCA={n:'Rebecca',c:'#22d3ee',ab:{id:'furia',n:'Furia de Hermana',d:'Cuando cae un aliado en el combate, su Ataque sube +2.'},vida:90,ataque:90,defensa:45,atkEsp:20,defEsp:50,velocidad:70,mv:[
+ {n:'Guts',cat:'físico',p:90,a:80,t:'enemigo'},
+ {n:'Doble Cañón',cat:'físico',p:45,a:95,golpes:2,cadena:[1],t:'enemigo'},
+ {n:'Locura Gonk',cat:'estado',sube:{ataque:2,defensa:-1},t:'yo'},
+ {n:'Provocación',cat:'provocar',turnos:3,t:'rivales'}]};
+const LUCY={n:'Lucy',c:'#94a3b8',ab:{id:'red',n:'Ojos en la Red',d:'Al entrar al campo, baja Defensa y Def Esp -1 a todos los rivales.'},vida:80,ataque:30,defensa:45,atkEsp:90,defEsp:70,velocidad:85,mv:[
+ {n:'Hackeo',cat:'especial',p:65,a:100,t:'enemigo'},
+ {n:'Cortocircuito',cat:'especial',p:85,a:90,para:.25,t:'enemigo'},
+ {n:'Cortafuegos',cat:'estado',sube:{defEsp:2,defensa:1},t:'aliado'},
+ {n:'Virus',cat:'virus',dano:.08,turnos:4,t:'enemigo'}]};
+const MAINE={n:'Maine',c:'#dc2626',ab:{id:'psicosis',n:'Cyberpsicosis Progresiva',d:'Al final de cada turno en el campo, sube Ataque +1 (hasta +3) y baja Def Esp -1 (hasta -3).'},vida:140,ataque:95,defensa:80,atkEsp:20,defEsp:55,velocidad:55,mv:[
+ {n:'Puños Cibernéticos',cat:'físico',p:85,a:90,t:'enemigo'},
+ {n:'Disparo Pesado',cat:'físico',p:100,a:75,t:'enemigo'},
+ {n:'Orden de Maine',cat:'estado',sube:{ataque:1,velocidad:1},t:'aliado'},
+ {n:'Embestida',cat:'físico',p:65,a:100,t:'enemigo'}]};
+const GOKU={n:'Goku',c:'#f59e0b',ab:{id:'zenkai',n:'Zenkai',d:'Cada golpe que recibe tiene un 30% de subirle el Ataque +1.'},vida:105,ataque:90,defensa:65,atkEsp:90,defEsp:65,velocidad:90,mv:[
+ {n:'Kamehameha',cat:'especial',p:100,a:90,cd:1,t:'enemigo'},
+ {n:'Ráfaga de Golpes',cat:'físico',p:35,a:95,golpes:4,cadena:[.75,.75,.75],t:'enemigo'},
+ {n:'Kaio-ken',cat:'estado',sube:{ataque:2,velocidad:1,defensa:-1},t:'yo'},
+ {n:'Genkidama',cat:'especial',p:130,a:100,cd:3,t:'enemigo'}]};
+const VEGETA={n:'Vegeta',c:'#2563eb',ab:{id:'orgullo',n:'Orgullo Saiyajin',d:'Cuanta menos vida le queda, más daño hace: hasta +50% a punto de caer.'},vida:95,ataque:85,defensa:60,atkEsp:100,defEsp:60,velocidad:85,mv:[
+ {n:'Galick Ho',cat:'especial',p:90,a:90,t:'enemigo'},
+ {n:'Big Bang Attack',cat:'especial',p:70,a:100,t:'enemigo'},
+ {n:'Final Flash',cat:'especial',p:120,a:80,cd:1,t:'enemigo'},
+ {n:'Patada Saiyajin',cat:'físico',p:70,a:100,t:'enemigo'}]};
+const PICCOLO={n:'Piccolo',c:'#16a34a',ab:{id:'namek',n:'Regeneración Namekiana',d:'Al final de cada turno en el campo recupera un 5% de su vida máxima.'},vida:130,ataque:70,defensa:85,atkEsp:80,defEsp:85,velocidad:55,mv:[
+ {n:'Makankosappo',cat:'especial',p:120,a:80,cd:2,t:'enemigo'},
+ {n:'Puño Extensible',cat:'físico',p:65,a:100,t:'enemigo'},
+ {n:'Barrera de Ki',cat:'estado',sube:{defensa:2,defEsp:2},t:'yo'},
+ {n:'Regeneración',cat:'cura',cura:.3,cd:1,t:'yo'}]};
+const KRILLIN={n:'Krillin',c:'#facc15',ab:{id:'amigo',n:'Amigo Leal',d:'Al entrar al campo, cura un 10% de su vida máxima a todo el equipo activo.'},vida:80,ataque:55,defensa:50,atkEsp:70,defEsp:55,velocidad:80,mv:[
+ {n:'Kienzan',cat:'especial',p:95,a:80,cd:1,t:'enemigo'},
+ {n:'Taiyōken',cat:'ciego',turnos:2,t:'rivales'},
+ {n:'Semilla del Ermitaño',cat:'cura',cura:.5,cd:3,t:'aliado'},
+ {n:'Golpe Rápido',cat:'físico',p:55,a:100,t:'enemigo'}]};
+const CHOCOLA={n:'Chocola',c:'#b45309',ab:{id:'ronroneo',n:'Ronroneo',d:'Al final de cada turno cura un 5% de su vida máxima a sus aliados en el campo (no a sí misma).'},vida:85,ataque:55,defensa:55,atkEsp:60,defEsp:70,velocidad:90,mv:[
+ {n:'Abrazo Mimoso',cat:'estado',sube:{defensa:2,defEsp:1},t:'aliado'},
+ {n:'Maullido Animador',cat:'estado',sube:{ataque:1,atkEsp:1,velocidad:1},t:'aliado'},
+ {n:'Ojitos de Gata',cat:'estado',sube:{ataque:-1,atkEsp:-1},t:'enemigo'},
+ {n:'Zarpazo',cat:'físico',p:30,a:100,golpes:2,cadena:[1],sangra:.1,t:'enemigo'}]};
+const SERIES=[{n:'Bleach',ch:[ICHIGO,ORIHIME,CHAD,RUKIA]},{n:'Cyberpunk: Edgerunners',ch:[DAVID,REBECCA,LUCY,MAINE]},{n:'Dragon Ball',ch:[GOKU,VEGETA,PICCOLO,KRILLIN]},{n:'Nekopara',ch:[CHOCOLA]}];
+const ROSTER=SERIES.flatMap(s=>s.ch); // personajes seleccionables
+const MANIQUI=(l,v)=>({n:'Maniquí '+l,i:l,c:'#78716c',vida:200,ataque:45,defensa:50,atkEsp:0,defEsp:50,velocidad:v,mv:[{n:'Golpe',cat:'físico',p:40,a:100,t:'enemigo'}]});
+// ===== NIVELES DE ESTADÍSTICAS (-6 a +6, como Pokémon) =====
+const mult=n=>n>=0?(2+n)/2:2/(2-n);
+const fm=(u,k)=>{let f=1;if(u.hollow&&(k==='ataque'||k==='atkEsp'||k==='velocidad'))f*=2;if(u.cansado&&(k==='ataque'||k==='atkEsp'))f*=.5;if(u.para&&k==='velocidad')f*=.5;return f}; // Hollow, agotamiento y parálisis
+const val=(u,k)=>Math.round(u[k]*mult(u.st[k])*fm(u,k));
+const mk=(b,side)=>({...b,side,cd:{},shield:false,hp:b.vida,st:{ataque:0,defensa:0,atkEsp:0,defEsp:0,velocidad:0}});
+// ===== ESTADO =====
+let A,B,F,turn,sel,over; // A = activos, B = banca, F = rivales
+const $=s=>document.querySelector(s),lg=$('#log');
+const L=t=>{lg.innerHTML+='<div>'+t+'</div>';lg.scrollTop=1e9};
+const alive=x=>x.filter(u=>u.hp>0),rnd=a=>a[Math.floor(Math.random()*a.length)];
+function reset(){screen='battle';A=picked.slice(0,2).map(i=>mk(ROSTER[i],'A'));B=picked.slice(2).map(i=>mk(ROSTER[i],'A'));F=[mk(MANIQUI('A',40),'F'),mk(MANIQUI('B',60),'F')];turn=1;over=false;sel={acts:[],move:null};lg.innerHTML='';L('<b>— Turno 1 —</b>');A.forEach(entrar);draw()}
+// ===== ACCIONES =====
+// coste de usar un movimiento: recarga y efectos de retroceso (p. ej. Mugetsu agota a Ichigo)
+const esq=t=>Math.max(0,5+(val(t,'velocidad')/t.velocidad-1)*100/15); // esquive (%) de Reflejos Cibernéticos
+const bono=u=>u.ab&&u.ab.id==='amable'?1.1:1; // Corazón Amable
+const entrar=u=>{if(u.ab&&u.ab.id==='amigo'){(u.side==='A'?A:F).filter(x=>x.hp>0).forEach(x=>{x.hp=Math.min(x.vida,x.hp+Math.round(x.vida*.1))});L(`💛 <b>${u.n}</b> (Amigo Leal): cura un 10% a su equipo en el campo`)}
+ if(u.ab&&u.ab.id==='red'){alive(u.side==='A'?F:A).forEach(f=>{f.st.defensa=Math.max(-6,f.st.defensa-1);f.st.defEsp=Math.max(-6,f.st.defEsp-1)});L(`👁 <b>${u.n}</b> (Ojos en la Red): Defensa y Def Esp -1 a los rivales`)}};
+const caida=t=>{(t.side==='A'?A:F).forEach(a=>{if(a!==t&&a.hp>0&&a.ab&&a.ab.id==='furia'){a.st.ataque=Math.min(6,a.st.ataque+2);L(`💢 <b>${a.n}</b> (Furia de Hermana): Ataque +2`)}})};
+const hollowCheck=t=>{if(t.ab&&t.ab.id==='hollow'&&!t.usoHollow&&t.hp>0&&t.hp<=t.vida*.33){t.usoHollow=true;t.hollow=2;L(`🔥 <b>${t.n}</b> libera su máscara (Instinto Hollow): Ataque, Atk Esp y Velocidad ×2`)}};
+const cost=(u,m)=>{
+ if(m.cd)u.cd[m.n]=m.cd+1;
+ if(m.retro){for(const k in m.retro)u.st[k]=Math.max(-6,u.st[k]+m.retro[k]);L(`· ${u.n} queda agotado: ${Object.keys(m.retro).map(k=>NM[k]+' '+m.retro[k]).join(', ')}`)}
+};
+function exec(a){
+ const u=a.u,m=a.m;if(u.hp<=0||over)return;
+ if(!(u.side==='A'?A:F).includes(u))return; // ya no está en combate
+ if(m.cat==='cambio'){
+  const i=A.indexOf(u),j=B.indexOf(a.t);if(i<0||j<0||a.t.hp<=0)return;
+  for(const k of KEYS)u.st[k]=0;u.regen=null; // al retirarse pierde mejoras y regeneración
+  B[j]=u;A[i]=a.t;L(`<b>${u.n}</b> se retira. ¡Entra <b>${a.t.n}</b>!`);entrar(a.t);return;
+ }
+ if(u.frozen){L(`❄ ${u.n} está congelado y no puede moverse`);return}
+ if(u.para&&Math.random()<.25){L(`⚡ ${u.n} está paralizado y no puede moverse`);return}
+ if(u.taunt&&m.cat!=='físico'&&m.cat!=='especial'){L(`${u.n} está provocado y no puede usar ${m.n}`);return}
+ const foes=alive(u.side==='A'?F:A);let t=a.t;
+ if(m.t==='yo')t=u;
+ else if(m.t==='enemigo'&&(!t||t.hp<=0)){if(!foes.length)return;t=rnd(foes)}
+ if(m.t==='aliado'&&!A.includes(t)){L(`${u.n} usa ${m.n}... ¡falla!`);return}
+ if(m.cat==='ciego'){
+  L(`<b>${u.n} usa ${m.n}</b>: los rivales fallarán más durante ${m.turnos} turnos`);
+  foes.forEach(f=>{f.ciego=m.turnos+1});
+ }else if(m.cat==='provocar'){
+  L(`<b>${u.n} usa ${m.n}</b>: los rivales solo podrán atacar durante ${m.turnos} turnos`);
+  foes.forEach(f=>{f.taunt=m.turnos+1});
+ }else if(m.cat==='virus'){
+  t.virus={t:m.turnos+1,p:m.dano};
+  L(`<b>${u.n} usa ${m.n}</b> sobre ${t.n}: perderá un ${Math.round(m.dano*100)}% de vida por turno durante ${m.turnos} turnos`);
+ }else if(m.cat==='regen'){
+  if(t.hp<=0){L(`${u.n} usa ${m.n}... ${t.n} ya no puede ser curado.`);return}
+  t.regen={t:m.turnos,p:m.cura*bono(u)};
+  L(`<b>${u.n} usa ${m.n}</b>: ${t.n} se regenerará durante ${m.turnos} turnos`);
+ }else if(m.cat==='escudo'){
+  if(t.hp<=0){L(`${u.n} usa ${m.n}... ${t.n} ya no puede ser protegido.`);return}
+  for(const k of KEYS)t.st[k]=0;t.para=0;t.frozen=false;t.taunt=0;t.ciego=0;t.sangrado=null;t.virus=null;t.shield=true;
+  const h=Math.min(t.vida-t.hp,Math.round(t.vida*m.cura*bono(u)));t.hp+=h;u.cd[m.n]=m.cd+1;
+  L(`<b>${u.n} usa ${m.n}</b>: escudo sobre ${t.n}, estadísticas restauradas · <b>+${h}</b>`);
+ }else if(m.cat==='estado'){
+  L(`<b>${u.n} usa ${m.n}</b>${t!==u?' sobre '+t.n:''}`);
+  for(const k in m.sube){const o=t.st[k],n=Math.max(-6,Math.min(6,o+m.sube[k]));t.st[k]=n;L(n===o?`· ${NM[k]} no puede ${m.sube[k]>0?'subir':'bajar'} más`:`· ${NM[k]} ${n>o?'sube':'baja'} a ${n>0?'+':''}${n} (×${mult(n).toFixed(2)})`)}
+ }else if(m.cat==='cura'){
+  if(t.hp<=0){L(`${u.n} usa ${m.n}... ${t.n} ya no puede ser curado.`);return}
+  const h=Math.min(t.vida-t.hp,Math.round(t.vida*m.cura*bono(u)));t.hp+=h;
+  L(`${u.n} usa ${m.n} en ${t.n}: <b>+${h}</b>`);if(m.cd)u.cd[m.n]=m.cd+1;
+ }else if(t.shield){L(`${u.n} usa ${m.n} contra ${t.n}... ¡el escudo lo rechaza!`);cost(u,m)}else if(t.ab&&t.ab.id==='reflejos'&&Math.random()*100<esq(t)){L(`${u.n} usa ${m.n} contra ${t.n}... ¡${t.n} lo esquiva con sus reflejos!`);cost(u,m)}else if(Math.random()*100>m.a*(u.ciego?.5:1)){L(`${u.n} usa ${m.n}... ¡falla!`);cost(u,m)}
+ else{
+  let n=0;
+  do{n++; // golpes múltiples: tras cada golpe, 50% de dar otro (hasta m.golpes)
+  const esp=m.cat==='especial',ka=esp?'atkEsp':'ataque',kd=esp?'defEsp':'defensa',x=val(u,ka),d=val(t,kd);
+  const dmg=Math.round(((x/d)*m.p*.45+2)*(.85+Math.random()*.15)*(t.ab&&t.ab.id==='acero'?.9:1)*(u.ab&&u.ab.id==='orgullo'?1+(1-u.hp/u.vida)*.5:1));
+  t.hp=Math.max(0,t.hp-dmg);
+  L(`${u.n} usa ${m.n} contra ${t.n}: <b>-${dmg}</b> <small>(${NM[ka]} ${x} vs ${NM[kd]} ${d})</small>`);
+  if(t.hp<=0){L(`<b>${t.n} cae.</b>`);caida(t)}
+  else{hollowCheck(t);if(t.ab&&t.ab.id==='zenkai'&&t.st.ataque<6&&Math.random()<.3){t.st.ataque++;L(`💥 <b>${t.n}</b> (Zenkai): Ataque +1`)}if(m.para&&!t.para&&Math.random()<m.para){t.para=4;L(`⚡ <b>${t.n} queda paralizado</b>: Velocidad a la mitad y 25% de no moverse (3 turnos)`)}if(u.ab&&u.ab.id==='hielo'&&!t.frozen&&Math.random()<.025){t.frozen=true;L(`❄ <b>${t.n} queda congelado</b>`)}}
+  }while(t.hp>0&&n<(m.golpes||1)&&Math.random()<(m.cadena?m.cadena[n-1]:.5));
+  if(n>1)L(`· ¡${n} golpes!`);
+  if(m.sangra&&t.hp>0&&!t.sangrado&&Math.random()<m.sangra){t.sangrado={t:3,p:.06};L(`🩸 <b>${t.n} empieza a sangrar</b>: perderá un 6% de vida por turno durante 3 turnos`)}
+  cost(u,m);
+ }
+}
+function round(){
+ [...A,...F].forEach(u=>{if(u.frozen&&u.hp>0&&Math.random()<.1){u.frozen=false;L(`· ${u.n} se descongela`)}});
+ const sw=sel.acts.filter(a=>a.m.cat==='cambio'),pr=sel.acts.filter(a=>a.m.cat==='escudo'),acts=sel.acts.filter(a=>a.m.cat!=='cambio'&&a.m.cat!=='escudo');
+ sw.forEach(exec);pr.forEach(exec); // cambios y escudos tienen prioridad
+ alive(F).forEach(u=>acts.push({u,m:u.mv[0],t:rnd(alive(A))}));
+ acts.map(a=>({a,s:val(a.u,'velocidad')+Math.random()})).sort((x,y)=>y.s-x.s).forEach(o=>exec(o.a));
+ [...A,...F].forEach(u=>{if(u.hp>0&&u.sangrado){const d=Math.round(u.vida*u.sangrado.p);u.hp=Math.max(0,u.hp-d);L(`🩸 ${u.n} sangra: <b>-${d}</b>`);if(u.hp<=0){L(`<b>${u.n} cae.</b>`);caida(u)}else if(--u.sangrado.t<=0){u.sangrado=null;L(`· ${u.n} deja de sangrar`)}}});
+ [...A,...F].forEach(u=>{if(u.hp>0&&u.virus){const d=Math.round(u.vida*u.virus.p);u.hp=Math.max(0,u.hp-d);L(`☣ ${u.n} sufre el virus: <b>-${d}</b>`);if(u.hp<=0){L(`<b>${u.n} cae.</b>`);caida(u)}else if(--u.virus.t<=0){u.virus=null;L(`· El virus de ${u.n} se disipa`)}}});
+ A.forEach(u=>{if(u.hp>0&&u.ab&&u.ab.id==='psicosis'&&(u.st.ataque<3||u.st.defEsp>-3)){if(u.st.ataque<3)u.st.ataque++;if(u.st.defEsp>-3)u.st.defEsp--;L(`🌀 <b>${u.n}</b> (Cyberpsicosis): Ataque +1, Def Esp -1`)}});
+ A.forEach(u=>{if(u.hp>0&&u.ab&&u.ab.id==='ronroneo'){A.forEach(x=>{if(x!==u&&x.hp>0&&x.hp<x.vida){const h=Math.min(x.vida-x.hp,Math.round(x.vida*.05));x.hp+=h;L(`🐾 ${u.n} ronronea y cura a ${x.n}: <b>+${h}</b>`)}})}});
+ A.forEach(u=>{if(u.hp>0&&u.ab&&u.ab.id==='namek'&&u.hp<u.vida){const h=Math.min(u.vida-u.hp,Math.round(u.vida*.05));u.hp+=h;L(`🌱 ${u.n} se regenera (Namekiano): <b>+${h}</b>`)}});
+ A.forEach(u=>{if(u.hp>0&&u.regen){const h=Math.min(u.vida-u.hp,Math.round(u.vida*u.regen.p));u.hp+=h;L(`♻ ${u.n} se regenera: <b>+${h}</b>`);if(--u.regen.t<=0){u.regen=null;L(`· La regeneración de ${u.n} termina`)}}});
+ [...A,...B,...F].forEach(u=>{if(u.hollow&&--u.hollow<=0){u.hollow=0;u.cansado=true;L(`😮‍💨 <b>${u.n}</b> se agota: la máscara se rompe y su poder cae para siempre`)}if(u.ciego&&--u.ciego<=0){u.ciego=0;L(`· ${u.n} recupera la vista`)}if(u.taunt&&--u.taunt<=0){u.taunt=0;L(`· ${u.n} ya no está provocado`)}if(u.para&&--u.para<=0){u.para=0;L(`· ${u.n} ya no está paralizado`)}u.shield=false;for(const k in u.cd)if(u.cd[k]>0)u.cd[k]--}); // fin de turno: cae el escudo, avanza la recarga
+ if(!alive(F).length){over=true;L('<b>¡Has ganado!</b>')}
+ else{
+  A.forEach((u,i)=>{if(u.hp<=0&&alive(B).length){const n=alive(B)[0];B[B.indexOf(n)]=u;A[i]=n;L(`<b>¡Entra ${n.name||n.n} al campo!</b>`);entrar(n)}});
+  if(!alive(A).length){over=true;L('<b>Has perdido.</b>')}
+ }
+ if(!over){turn++;L(`<b>— Turno ${turn} —</b>`)}
+ sel={acts:[],move:null};draw();
+}
+// ===== INTERFAZ =====
+const actor=()=>alive(A)[sel.acts.length];
+function pickSwitch(){sel.move={n:'Cambio',cat:'cambio',t:'banca'};draw()}
+function pickMove(i){const u=actor(),m=u.mv[i];if(m.t==='yo'||m.t==='rivales')add(u,m,u);else{sel.move=m;draw()}}
+function pickTarget(side,i){add(actor(),sel.move,({F,A,B})[side][i])}
+function add(u,m,t){sel.acts.push({u,m,t});sel.move=null;sel.acts.length===alive(A).length?round():draw()}
+function back(){if(sel.move)sel.move=null;else sel.acts.pop();draw()}
+const statTxt=m=>Object.keys(m.sube).map(k=>NM[k]+' '+(m.sube[k]>0?'+':'')+m.sube[k]).join(', ')+({enemigo:' al rival',aliado:' a un aliado',yo:' a sí mismo'})[m.t];
+const chip=(u,k)=>{const s=u.st[k];return `<span>${NM[k]}: <b class="${s>0?'up':s<0?'dn':''}">${val(u,k)}</b>${s?` <small>(${s>0?'+':''}${s})</small>`:''}</span>`};
+const pan=(u,cur)=>`<div class="pan ${u.hp<=0?'ko':''} ${cur?'cur':''}"><div class="row"><div class="av" style="background:${u.c}">${u.i||u.n[0]}</div><div style="flex:1"><b>${u.n}</b> <small>${u.hp<=0?'KO':'Vida '+u.hp+'/'+u.vida}</small>${u.regen?` <small class="up">♻ regen ${u.regen.t}</small>`:''}${u.hollow?' <small class="up">🔥 Hollow</small>':''}${u.cansado?' <small class="dn">agotado</small>':''}${u.frozen?' <small class="dn">❄ congelado</small>':''}${u.para?' <small class="dn">⚡ paralizado</small>':''}${u.taunt?' <small class="dn">provocado</small>':''}${u.ciego?' <small class="dn">cegado</small>':''}${u.sangrado?' <small class="dn">🩸 sangrando</small>':''}${u.virus?' <small class="dn">☣ virus</small>':''}<div class="bar"><i style="width:${u.hp/u.vida*100}%"></i></div></div></div>${u.ab?`<small>✨ ${u.ab.n}</small>`:''}<div class="st">${KEYS.map(k=>chip(u,k)).join('')}</div></div>`;
+function ctl(){
+ if(over)return `<div class="mv"><button onclick="reset()"><b>Revancha</b><br><small>mismo equipo</small></button><button onclick="toTeam()"><b>Cambiar equipo</b><br><small>volver a la selección</small></button></div>`;
+ const u=actor(),back_=sel.acts.length||sel.move?`<button onclick="back()">← Atrás</button>`:'';
+ if(!sel.move)return `<b>Turno ${turn}: ¿qué hace ${u.n}?</b><div class="mv">${u.mv.map((m,i)=>`<button onclick="pickMove(${i})"${(u.cd[m.n]>0||(u.taunt&&m.cat!=='físico'&&m.cat!=='especial'))?' disabled':''}><b>${m.n}</b><br><small>${m.cat}${m.p?' · pot. '+m.p+' · prec. '+m.a+(m.golpes?' · '+(m.cadena&&m.cadena.every(c=>c===1)?'':'hasta ')+m.golpes+' golpes':'')+(m.sangra?' · '+Math.round(m.sangra*100)+'% de sangrado':'')+(m.para?' · '+m.para*100+'% de paralizar':''):m.cat==='ciego'?' · los rivales fallan más (precisión a la mitad), '+m.turnos+' turnos':m.cat==='provocar'?' · los rivales solo pueden atacar, '+m.turnos+' turnos':m.cat==='virus'?' · quita '+m.dano*100+'% de vida por turno, '+m.turnos+' turnos':m.cat==='regen'?' · cura '+m.cura*100+'% por turno, '+m.turnos+' turnos':m.cat==='escudo'?' · rechaza ataques, quita estados, cura '+m.cura*100+'%':m.cura?' · cura '+m.cura*100+'%':' · '+statTxt(m)}${u.cd[m.n]>0?' · disponible en '+u.cd[m.n]+' turno':m.cd?' · recarga '+m.cd+' turno':''}</small></button>`).join('')}${alive(B).some(b=>!sel.acts.some(a=>a.t===b))?`<button onclick="pickSwitch()"><b>⇄ Cambiar</b><br><small>gasta el turno</small></button>`:''}${back_}</div>`;
+ const side=sel.move.t==='enemigo'?'F':sel.move.t==='banca'?'B':'A',list=({F,A,B})[side];
+ return `<b>${u.n} usa ${sel.move.n}: elige objetivo</b><div class="mv">${list.map((t,i)=>t.hp>0&&!(side==='B'&&sel.acts.some(a=>a.t===t))?`<button onclick="pickTarget('${side}',${i})"><b>${t.n}</b><br><small>Vida ${t.hp}/${t.vida}</small></button>`:'').join('')}${back_}</div>`;
+}
+let screen='menu',picked=[0,1,2,3]; // pantalla actual y equipo elegido (los 2 primeros salen al campo)
+function toMenu(){screen='menu';draw()}
+function toTeam(){screen='team';draw()}
+function toggle(i){const p=picked.indexOf(i);if(p>=0)picked.splice(p,1);else if(picked.length<4)picked.push(i);draw()}
+function drawScreen(){
+ const app=$('#app');
+ if(screen==='menu'){app.innerHTML=`<div class="ctl" style="text-align:center;padding:32px 12px"><h2 style="margin:0 0 6px">Anime Showdown</h2><small>Combate por turnos 2 contra 2</small><div class="mv" style="grid-template-columns:1fr;max-width:240px;margin:20px auto 0"><button onclick="toTeam()" style="text-align:center"><b>▶ Jugar</b></button></div></div>`;return}
+ app.innerHTML=`<div class="ctl"><b>Elige tu equipo</b><br><small>Toca para añadir o quitar (2 a 4 personajes). Los 2 primeros que elijas salen al campo; el resto empieza en la banca.</small></div>${SERIES.map(s=>`<div style="margin:14px 0 6px"><b>${s.n}</b></div><div class="team">${s.ch.map(u=>{const i=ROSTER.indexOf(u),p=picked.indexOf(i);return `<button class="pan ${p>=0?'cur':''}" onclick="toggle(${i})"><div class="row"><div class="av" style="background:${u.c}">${u.n[0]}</div><div style="flex:1"><b>${u.n}</b> ${p>=0?`<small class="up">${p<2?'Campo '+(p+1):'Banca'}</small>`:''}<br><small>Vida ${u.vida} · Atq ${u.ataque} · Def ${u.defensa} · AtE ${u.atkEsp} · DefE ${u.defEsp} · Vel ${u.velocidad}</small></div></div><div style="margin-top:6px"><small>${u.mv.map(m=>m.n).join(' · ')}</small></div><div style="margin-top:4px"><small>✨ <b>${u.ab.n}</b>: ${u.ab.d}</small></div></button>`}).join('')}</div>`).join('')}<div class="mv" style="margin-top:12px"><button onclick="toMenu()">← Atrás</button><button onclick="reset()"${picked.length<2?' disabled':''}><b>⚔ Combatir</b><br><small>${picked.length} personajes · rivales: 2 maniquíes</small></button></div>`;
+}
+function draw(){
+ if(screen!=='battle'){lg.style.display='none';return drawScreen()}
+ lg.style.display='';
+ const cur=over?null:actor();
+ $('#app').innerHTML=`<small>Rivales</small><div class="team">${F.map(u=>pan(u)).join('')}</div><small>Tu equipo</small><div class="team">${A.map(u=>pan(u,u===cur)).join('')}</div>${B.length?`<small>Banca</small><div class="team">${B.map(u=>pan(u)).join('')}</div>`:''}<div class="ctl">${ctl()}</div>`;
+}
+// Regla: todo personaje jugable tiene siempre 4 movimientos
+ROSTER.forEach(c=>{if(c.mv.length!==4)console.warn(c.n+' debe tener 4 movimientos, tiene '+c.mv.length)});
+draw();
+</script></body></html>
